@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Wordle Helper",
+  "version": "1.0.0",
+  "description": "智能Wordle游戏助手 - 截图识别游戏状态并推荐最优猜词",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "https://api.dictionaryapi.dev/*"
+  ],
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  }
+}
