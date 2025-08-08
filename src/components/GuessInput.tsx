@@ -26,22 +26,19 @@ export const GuessInput: React.FC<GuessInputProps> = ({
   );
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
-  // 当字长变化时重置
+  // 当初始值改变时重置（比如清空所有）
   useEffect(() => {
-    const newLetters = Array(wordLength).fill('');
-    const newStatuses: LetterStatus[] = Array(wordLength).fill('absent');
+    const newLetters = initialWord ? 
+      initialWord.split('').concat(Array(Math.max(0, wordLength - initialWord.length)).fill('')) :
+      Array(wordLength).fill('');
     
-    // 保留原有的字母和状态
-    for (let i = 0; i < Math.min(wordLength, letters.length); i++) {
-      if (letters[i]) {
-        newLetters[i] = letters[i];
-        newStatuses[i] = statuses[i];
-      }
-    }
+    const newStatuses = initialStatuses.length === wordLength ? 
+      initialStatuses : 
+      Array(wordLength).fill('absent');
     
     setLetters(newLetters);
     setStatuses(newStatuses);
-  }, [wordLength]);
+  }, [initialWord, JSON.stringify(initialStatuses), wordLength]);
 
   // 通知父组件
   useEffect(() => {

@@ -2,6 +2,49 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Custom AI Development Team
+
+This project has specialized AI agents configured for optimal development. Use `/ai` to engage the team.
+
+### Available Specialists
+
+1. **chrome-extension-architect** (model: sonnet)
+   - Chrome Extension Manifest V3 architecture
+   - Cross-context messaging and Chrome APIs
+   - Performance optimization
+
+2. **ocr-recognition-specialist** (model: opus)
+   - Tesseract.js OCR implementation
+   - Image preprocessing algorithms
+   - Multi-website color scheme detection
+
+3. **wordle-algorithm-expert** (model: opus)
+   - Information entropy calculations
+   - Constraint-based filtering
+   - Optimal word recommendations
+
+4. **react-ui-developer** (model: sonnet)
+   - React 18 + TypeScript components
+   - Tailwind CSS styling
+   - Radix UI integration
+
+5. **zustand-state-manager** (model: sonnet)
+   - Zustand store architecture
+   - Chrome storage persistence
+   - Cross-context state sync
+
+6. **extension-testing-specialist** (model: sonnet)
+   - Jest test suites
+   - OCR accuracy benchmarks
+   - E2E extension testing
+
+### Usage Examples
+```bash
+/ai "improve OCR accuracy for thin letters"     # Engages ocr-recognition-specialist
+/ai "optimize entropy calculation performance"   # Engages wordle-algorithm-expert
+/ai "add dark mode to popup interface"          # Engages react-ui-developer
+```
+
 ## 项目概述
 
 这是一个Chrome浏览器扩展，用于辅助Wordle游戏。通过截图识别游戏状态，使用信息熵算法推荐最优猜词。

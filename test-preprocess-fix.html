@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>预处理问题诊断</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        h1 { text-align: center; color: #333; }
+        .test-case {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            margin: 5px;
+            background: white;
+        }
+        .canvas-row {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .debug-info {
+            padding: 10px;
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover { background: #45a049; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 预处理问题诊断</h1>
+        
+        <div class="test-case">
+            <h2>测试案例：灰底白字的字母 I</h2>
+            <button onclick="runTest()">运行诊断测试</button>
+            <div id="testResults"></div>
+        </div>
+    </div>
+
+    <script>
+        // 创建测试图像（模拟用户提供的情况）
+        function createTestImage() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 60;
+            canvas.height = 60;
+            const ctx = canvas.getContext('2d');
+            
+            // 灰色背景（类似用户图片）
+            ctx.fillStyle = '#7a8085'; // 灰色
+            ctx.fillRect(0, 0, 60, 60);
+            
+            // 白色字母 I
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 40px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('I', 30, 30);
+            
+            return canvas;
+        }
+        
+        // 简化的预处理函数（用于调试）
+        function preprocessDebug(imageData) {
+            const { width, height, data } = imageData;
+            const output = new ImageData(width, height);
+            const outputData = output.data;
+            
+            // 1. 计算直方图
+            const histogram = new Array(256).fill(0);
+            for (let i = 0; i < data.length; i += 4) {
+                const brightness = Math.round((data[i] + data[i + 1] + data[i + 2]) / 3);
+                histogram[brightness]++;
+            }
+            
+            // 2. Otsu's方法找阈值
+            const totalPixels = width * height;
+            let sum = 0;
+            for (let i = 0; i < 256; i++) {
+                sum += i * histogram[i];
+            }
+            
+            let sumB = 0, wB = 0, wF = 0;
+            let maxVariance = 0;
+            let threshold = 0;
+            
+            for (let t = 0; t < 256; t++) {
+                wB += histogram[t];
+                if (wB === 0) continue;
+                
+                wF = totalPixels - wB;
+                if (wF === 0) break;
+                
+                sumB += t * histogram[t];
+                
+                const mB = sumB / wB;
+                const mF = (sum - sumB) / wF;
+                
+                const variance = wB * wF * (mB - mF) * (mB - mF);
+                
+                if (variance > maxVariance) {
+                    maxVariance = variance;
+                    threshold = t;
+                }
+            }
+            
+            // 3. 分析边缘和中心
+            const edgeSize = Math.floor(Math.min(width, height) * 0.15);
+            let edgeBrightSum = 0, edgeCount = 0;
+            let centerBrightSum = 0, centerCount = 0;
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 4;
+                    const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+                    
+                    const isEdge = x < edgeSize || x >= width - edgeSize || 
+                                  y < edgeSize || y >= height - edgeSize;
+                    
+                    if (isEdge) {
+                        edgeBrightSum += brightness;
+                        edgeCount++;
+                    } else {
+                        centerBrightSum += brightness;
+                        centerCount++;
+                    }
+                }
+            }
+            
+            const edgeAvgBright = edgeBrightSum / edgeCount;
+            const centerAvgBright = centerBrightSum / centerCount;
+            
+            // 调试信息
+            const debugInfo = {
+                threshold: threshold,
+                edgeAvgBright: edgeAvgBright.toFixed(1),
+                centerAvgBright: centerAvgBright.toFixed(1),
+                edgeIsBackground: edgeAvgBright < centerAvgBright ? '深色（灰色）' : '浅色（白色）',
+                textColor: centerAvgBright > edgeAvgBright ? '浅色（白色）' : '深色（黑色）'
+            };
+            
+            // 4. 改进的二值化策略
+            // 如果中心比边缘亮，说明文字是白色的，背景是深色的
+            let needInvert = false;
+            
+            if (centerAvgBright > edgeAvgBright) {
+                // 白字深背景：需要反转成黑字白背景
+                needInvert = true;
+                console.log('检测到：白字深背景，需要反转');
+            } else {
+                // 黑字浅背景：已经是正确格式
+                needInvert = false;
+                console.log('检测到：黑字浅背景，不需要反转');
+            }
+            
+            // 5. 应用二值化
+            for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+                const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                let pixelValue;
+                
+                if (needInvert) {
+                    // 反转：亮的变黑（文字），暗的变白（背景）
+                    pixelValue = brightness > threshold ? 0 : 255;
+                } else {
+                    // 不反转：亮的保持白，暗的保持黑
+                    pixelValue = brightness > threshold ? 255 : 0;
+                }
+                
+                outputData[i] = pixelValue;
+                outputData[i + 1] = pixelValue;
+                outputData[i + 2] = pixelValue;
+                outputData[i + 3] = 255;
+            }
+            
+            return { output, debugInfo };
+        }
+        
+        function runTest() {
+            const resultsDiv = document.getElementById('testResults');
+            resultsDiv.innerHTML = '';
+            
+            // 创建测试图像
+            const originalCanvas = createTestImage();
+            const ctx = originalCanvas.getContext('2d');
+            const imageData = ctx.getImageData(0, 0, 60, 60);
+            
+            // 预处理
+            const { output, debugInfo } = preprocessDebug(imageData);
+            
+            // 创建输出画布
+            const processedCanvas = document.createElement('canvas');
+            processedCanvas.width = 60;
+            processedCanvas.height = 60;
+            const processedCtx = processedCanvas.getContext('2d');
+            processedCtx.putImageData(output, 0, 0);
+            
+            // 显示结果
+            resultsDiv.innerHTML = `
+                <div class="canvas-row">
+                    <div>
+                        <h3>原始图像</h3>
+                        ${originalCanvas.outerHTML}
+                        <p>灰色背景 + 白色字母 I</p>
+                    </div>
+                    <div>→</div>
+                    <div>
+                        <h3>预处理后</h3>
+                        ${processedCanvas.outerHTML}
+                        <p>应该是：白底黑字</p>
+                    </div>
+                </div>
+                
+                <div class="debug-info">
+<strong>调试信息：</strong>
+Otsu阈值: ${debugInfo.threshold}
+边缘平均亮度: ${debugInfo.edgeAvgBright}
+中心平均亮度: ${debugInfo.centerAvgBright}
+边缘（背景）: ${debugInfo.edgeIsBackground}
+中心（文字）: ${debugInfo.textColor}
+${debugInfo.centerAvgBright > debugInfo.edgeAvgBright ? '✅ 正确检测到白字深背景' : '❌ 检测错误'}
+                </div>
+                
+                <div style="margin-top: 20px; padding: 15px; background: #d4edda; border-radius: 4px;">
+                    <h3>💡 问题分析</h3>
+                    <p>如果预处理后字母消失或变成黑边，可能是因为：</p>
+                    <ol>
+                        <li>阈值计算不准确（Otsu方法对灰色背景可能失效）</li>
+                        <li>反转逻辑错误（误判了背景和文字的颜色）</li>
+                        <li>边缘检测区域太小，没有正确识别背景</li>
+                    </ol>
+                    
+                    <h3>🛠️ 解决方案</h3>
+                    <p>使用改进的算法：</p>
+                    <ul>
+                        <li>比较边缘和中心的平均亮度来判断文字颜色</li>
+                        <li>白字深背景时正确反转成黑字白背景</li>
+                        <li>避免使用固定的反转规则</li>
+                    </ul>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

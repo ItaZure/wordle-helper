@@ -77,11 +77,13 @@ export function calculateEntropy(
  * @param candidateWords 候选猜测词（可以包含已排除的词）
  * @param possibleAnswers 可能的答案（满足当前约束的词）
  * @param topN 返回前N个推荐
+ * @param preferPossibleAnswers 是否优先推荐可能的答案
  */
 export function recommendWordsByEntropy(
   candidateWords: string[],
   possibleAnswers: string[],
-  topN: number = 5
+  topN: number = 5,
+  preferPossibleAnswers: boolean = true
 ): EntropyResult[] {
   
   // 如果剩余可能答案很少，直接猜其中一个
@@ -119,16 +121,24 @@ export function recommendWordsByEntropy(
   
   // 按熵降序排序
   results.sort((a, b) => {
+    const aIsAnswer = possibleAnswers.includes(a.word);
+    const bIsAnswer = possibleAnswers.includes(b.word);
+    
+    // 如果优先可能答案，且存在差异
+    if (preferPossibleAnswers && aIsAnswer !== bIsAnswer) {
+      return aIsAnswer ? -1 : 1;
+    }
+    
     // 优先选择熵大的
     if (Math.abs(a.entropy - b.entropy) > 0.001) {
       return b.entropy - a.entropy;
     }
+    
     // 熵相同时，优先选择可能是答案的词
-    const aIsAnswer = possibleAnswers.includes(a.word);
-    const bIsAnswer = possibleAnswers.includes(b.word);
     if (aIsAnswer !== bIsAnswer) {
       return aIsAnswer ? -1 : 1;
     }
+    
     // 其他情况按期望剩余数升序
     return a.expectedRemaining - b.expectedRemaining;
   });
@@ -162,7 +172,7 @@ export function getBestOpeningWords(wordLength: number): string[] {
 export function getWordRecommendations(
   allWords: string[],          // 所有词库中的词
   possibleAnswers: string[],   // 满足当前约束的词
-  _constraints: WordConstraints,
+  constraints: WordConstraints,
   isFirstGuess: boolean = false
 ): EntropyResult[] {
   
@@ -187,17 +197,29 @@ export function getWordRecommendations(
   
   // 候选词策略：
   // 1. 如果剩余可能答案少于50个，只从可能答案中选择
-  // 2. 否则，从所有词中选择（可能选择已被排除的词以获得更多信息）
+  // 2. 如果已经有确定位置的字母（绿色），只推荐符合约束的词
+  // 3. 否则，可以考虑更广泛的候选词
   let candidateWords: string[];
+  let preferPossibleAnswers = true;
   
-  if (possibleAnswers.length < 50) {
+  const hasCorrectLetters = constraints.correctLetters.size > 0;
+  
+  if (possibleAnswers.length < 50 || hasCorrectLetters) {
+    // 少量答案或已有确定字母时，只从可能答案中选择
     candidateWords = possibleAnswers;
   } else {
-    // 从所有词中选择，但限制数量以提高性能
-    candidateWords = allWords
+    // 大量可能答案且没有确定字母时，可以探索更多
+    preferPossibleAnswers = false;
+    
+    // 混合策略：80%的可能答案 + 20%的高频词
+    const possibleSample = possibleAnswers.slice(0, 800);
+    const allWordsSample = allWords
       .filter(word => word.length === possibleAnswers[0].length)
-      .slice(0, 1000); // 限制计算量
+      .slice(0, 200);
+    
+    // 合并并去重
+    candidateWords = Array.from(new Set([...possibleSample, ...allWordsSample]));
   }
   
-  return recommendWordsByEntropy(candidateWords, possibleAnswers, 5);
+  return recommendWordsByEntropy(candidateWords, possibleAnswers, 5, preferPossibleAnswers);
 }

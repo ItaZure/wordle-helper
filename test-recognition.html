@@ -1,0 +1,2351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wordle 识别测试</title>
+    <script src='https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js'></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        
+        .upload-area {
+            background: white;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .upload-area:hover {
+            border-color: #4CAF50;
+            background: #f9f9f9;
+        }
+        
+        .upload-area.dragover {
+            border-color: #4CAF50;
+            background: #e8f5e9;
+        }
+        
+        #fileInput {
+            display: none;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .panel h2 {
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 18px;
+        }
+        
+        #originalCanvas, #processedCanvas {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            display: block;
+            margin: 0 auto;
+        }
+        
+        .cells-grid {
+            display: grid;
+            gap: 5px;
+            margin-top: 20px;
+        }
+        
+        .cell-analysis {
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+        }
+        
+        .cell-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .cell-preview {
+            width: 60px;
+            height: 60px;
+            border: 1px solid #ccc;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        
+        .cell-info {
+            flex: 1;
+        }
+        
+        .color-box {
+            width: 30px;
+            height: 30px;
+            border: 1px solid #333;
+            display: inline-block;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        .state-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .state-correct { background: #6aaa64; }
+        .state-present { background: #c9b458; }
+        .state-absent { background: #787c7e; }
+        .state-empty { background: #d3d6da; color: #333; }
+        
+        .stats {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        
+        .controls {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        label {
+            font-weight: bold;
+            color: #555;
+        }
+        
+        input[type="number"] {
+            width: 60px;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        
+        button {
+            padding: 8px 16px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        button:hover {
+            background: #45a049;
+        }
+        
+        .game-state {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .wordle-row {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 5px;
+        }
+        
+        .wordle-cell {
+            width: 50px;
+            height: 50px;
+            border: 2px solid #d3d6da;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            text-transform: uppercase;
+            position: relative;
+        }
+        
+        .wordle-cell.correct {
+            background: #6aaa64;
+            border-color: #6aaa64;
+            color: white;
+        }
+        
+        .wordle-cell.present {
+            background: #c9b458;
+            border-color: #c9b458;
+            color: white;
+        }
+        
+        .wordle-cell.absent {
+            background: #787c7e;
+            border-color: #787c7e;
+            color: white;
+        }
+        
+        .confidence-badge {
+            position: absolute;
+            bottom: -8px;
+            right: -8px;
+            background: #2196F3;
+            color: white;
+            font-size: 10px;
+            padding: 2px 4px;
+            border-radius: 10px;
+            font-weight: normal;
+        }
+        
+        .recognition-summary {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f8ff;
+            border-radius: 8px;
+            border: 1px solid #4CAF50;
+        }
+        
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 10px;
+        }
+        
+        .stat-card {
+            text-align: center;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        /* OCR调试面板样式 */
+        #ocrDebugPanel {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 800px;
+            background: white;
+            border: 2px solid #4CAF50;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+            display: none;
+        }
+        
+        #ocrDebugPanel.active {
+            display: block;
+        }
+        
+        .debug-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .debug-close {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .debug-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        
+        .debug-stage {
+            text-align: center;
+        }
+        
+        .debug-stage h4 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #333;
+        }
+        
+        .debug-canvas {
+            border: 1px solid #ccc;
+            background: #f9f9f9;
+            max-width: 100%;
+            height: 100px;
+            object-fit: contain;
+        }
+        
+        .debug-info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .confidence-chart {
+            margin-top: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        
+        .confidence-bar {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+            font-size: 12px;
+        }
+        
+        .confidence-bar-label {
+            width: 30px;
+            font-weight: bold;
+        }
+        
+        .confidence-bar-track {
+            flex: 1;
+            height: 20px;
+            background: #ddd;
+            border-radius: 3px;
+            margin: 0 10px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .confidence-bar-fill {
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s;
+        }
+        
+        .confidence-bar-value {
+            width: 50px;
+            text-align: right;
+        }
+        
+        .cell-analysis {
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .cell-analysis:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Wordle 识别测试工具</h1>
+        
+        <!-- OCR调试面板 -->
+        <div id="ocrDebugPanel">
+            <div class="debug-header">
+                <h3>🔍 OCR识别调试</h3>
+                <button class="debug-close" onclick="closeDebugPanel()">✕</button>
+            </div>
+            <div class="debug-content" id="debugContent">
+                <!-- 动态生成的调试内容 -->
+            </div>
+            <div class="confidence-chart" id="confidenceChart">
+                <!-- 置信度图表 -->
+            </div>
+        </div>
+        
+        <div class="upload-area" id="uploadArea">
+            <p>📷 点击上传图片或拖拽图片到这里</p>
+            <p style="margin-top: 10px; color: #666; font-size: 14px;">支持 PNG, JPG, JPEG 格式</p>
+            <input type="file" id="fileInput" accept="image/*">
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label>配色方案：</label>
+                <select id="colorSchemeSelect" onchange="reprocess()" style="padding: 5px; border: 1px solid #ccc; border-radius: 4px; min-width: 180px;">
+                    <option value="wordle2.io">wordle2.io</option>
+                    <option value="lessgames.com">lessgames.com/wordless</option>
+                    <option value="auto" selected>自动检测</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>列数：</label>
+                <input type="number" id="colsInput" value="5" min="3" max="11">
+            </div>
+            <div class="control-group">
+                <label>行数：</label>
+                <input type="number" id="rowsInput" value="6" min="1" max="10">
+            </div>
+            <div class="control-group">
+                <label>格子间隙(%)：</label>
+                <input type="number" id="gapInput" value="8" min="0" max="20" step="1">
+            </div>
+            <button onclick="reprocess()">重新处理</button>
+        </div>
+        
+        <div class="main-content">
+            <div class="panel">
+                <h2>📥 原始图片</h2>
+                <canvas id="originalCanvas"></canvas>
+                <div id="debugInfo" style="background: #fffbf0; border: 1px solid #f0ad4e; padding: 10px; margin: 10px 0; border-radius: 4px; font-size: 12px; display: none;">
+                    <strong>调试信息：</strong>
+                    <ul style="margin: 5px 0;">
+                        <li>🔴 红框：检测到的游戏区域边界</li>
+                        <li>🔵 蓝框：每个格子的识别区域</li>
+                    </ul>
+                </div>
+                <div class="stats">
+                    <div class="stat-row">
+                        <span>图片尺寸：</span>
+                        <span id="imageSize">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span>宽高比：</span>
+                        <span id="aspectRatio">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span>自动检测列数：</span>
+                        <span id="detectedCols">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span>当前配色方案：</span>
+                        <span id="currentScheme">-</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2>🎯 识别结果</h2>
+                <div id="gameState" class="game-state"></div>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>🔬 格子分析</h2>
+            <div id="cellsAnalysis" class="cells-grid"></div>
+        </div>
+    </div>
+    
+    <script>
+        let currentImage = null;
+        
+        // 文件上传处理
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                handleFile(file);
+            }
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                handleFile(file);
+            }
+        });
+        
+        function handleFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = async () => {
+                    currentImage = img;
+                    await processImage(img);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        async function reprocess() {
+            if (currentImage) {
+                await processImage(currentImage);
+            }
+        }
+        
+        async function processImage(img) {
+            const canvas = document.getElementById('originalCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // 显示原图
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            
+            // 显示图片信息
+            document.getElementById('imageSize').textContent = `${img.width} x ${img.height}`;
+            const aspectRatio = img.width / img.height;
+            document.getElementById('aspectRatio').textContent = aspectRatio.toFixed(2);
+            
+            // 显示当前配色方案
+            const schemeSelect = document.getElementById('colorSchemeSelect');
+            const scheme = schemeSelect ? schemeSelect.value : 'auto';
+            document.getElementById('currentScheme').textContent = scheme;
+            
+            // 自动检测列数
+            let detectedCols = 5;
+            if (aspectRatio > 0.95) {
+                detectedCols = Math.round(aspectRatio * 6);
+                detectedCols = Math.min(Math.max(detectedCols, 5), 11);
+            }
+            document.getElementById('detectedCols').textContent = detectedCols;
+            document.getElementById('colsInput').value = detectedCols;
+            
+            // 分析格子
+            await analyzeCells(img);
+        }
+        
+        async function analyzeCells(img) {
+            const cols = parseInt(document.getElementById('colsInput').value);
+            const rows = parseInt(document.getElementById('rowsInput').value);
+            
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            
+            // 先找到游戏板的实际边界
+            const gameBounds = findGameBoard(ctx, img.width, img.height);
+            console.log('检测到的游戏边界:', gameBounds);
+            
+            // 显示调试信息
+            document.getElementById('debugInfo').style.display = 'block';
+            
+            // 在原图上绘制边界框（用于调试）
+            const originalCanvas = document.getElementById('originalCanvas');
+            const originalCtx = originalCanvas.getContext('2d');
+            
+            // 重新绘制原图
+            originalCanvas.width = img.width;
+            originalCanvas.height = img.height;
+            originalCtx.drawImage(img, 0, 0);
+            
+            // 绘制游戏边界
+            originalCtx.strokeStyle = 'red';
+            originalCtx.lineWidth = 2;
+            originalCtx.strokeRect(gameBounds.x, gameBounds.y, gameBounds.width, gameBounds.height);
+            
+            // 计算每个格子的大小（考虑格子间的间隙）
+            const cellWidth = gameBounds.width / cols;
+            const cellHeight = gameBounds.height / rows;
+            
+            // 获取用户设置的格子间隙
+            const gapRatio = parseInt(document.getElementById('gapInput').value) / 100;
+            const actualCellWidth = cellWidth * (1 - gapRatio);
+            const actualCellHeight = cellHeight * (1 - gapRatio);
+            const gapX = cellWidth * gapRatio / 2;
+            const gapY = cellHeight * gapRatio / 2;
+            
+            const cellsDiv = document.getElementById('cellsAnalysis');
+            cellsDiv.innerHTML = '';
+            cellsDiv.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+            
+            const gameStateDiv = document.getElementById('gameState');
+            gameStateDiv.innerHTML = '';
+            
+            const gameRows = [];
+            
+            for (let row = 0; row < rows; row++) {
+                const gameRow = [];
+                for (let col = 0; col < cols; col++) {
+                    // 计算格子的实际位置（考虑间隙）
+                    const x = gameBounds.x + col * cellWidth + gapX;
+                    const y = gameBounds.y + row * cellHeight + gapY;
+                    
+                    // 在原图上绘制格子框（用于调试）
+                    originalCtx.strokeStyle = 'blue';
+                    originalCtx.lineWidth = 1;
+                    originalCtx.strokeRect(x, y, actualCellWidth, actualCellHeight);
+                    
+                    // 获取格子图像数据
+                    // 确保坐标和尺寸在图像范围内
+                    const cellX = Math.max(0, Math.floor(x));
+                    const cellY = Math.max(0, Math.floor(y));
+                    const cellW = Math.min(Math.floor(actualCellWidth), img.width - cellX);
+                    const cellH = Math.min(Math.floor(actualCellHeight), img.height - cellY);
+                    const cellData = ctx.getImageData(cellX, cellY, cellW, cellH);
+                    
+                    // 分析格子
+                    const analysis = analyzeCell(cellData, row, col);
+                    gameRow.push(analysis);
+                }
+                gameRows.push(gameRow);
+            }
+            
+            // 异步识别所有有字母的格子
+            const ocrPromises = [];
+            for (let row = 0; row < gameRows.length; row++) {
+                for (let col = 0; col < gameRows[row].length; col++) {
+                    const cell = gameRows[row][col];
+                    if (cell.hasLetter && cell.imageData) {
+                        ocrPromises.push(
+                            recognizeLetter(cell.imageData).then(result => {
+                                cell.letter = result.letter;
+                                cell.confidence = result.confidence;
+                                delete cell.imageData; // 清理不需要的数据
+                                return cell;
+                            })
+                        );
+                    }
+                }
+            }
+            
+            // 等待所有OCR完成
+            await Promise.all(ocrPromises);
+            
+            // 创建UI显示
+            cellsDiv.innerHTML = '';
+            cellsDiv.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+            
+            for (let row = 0; row < gameRows.length; row++) {
+                for (let col = 0; col < gameRows[row].length; col++) {
+                    const analysis = gameRows[row][col];
+                    const cellX = gameBounds.x + col * cellWidth + gapX;
+                    const cellY = gameBounds.y + row * cellHeight + gapY;
+                    const cellData = ctx.getImageData(
+                        Math.max(0, Math.floor(cellX)),
+                        Math.max(0, Math.floor(cellY)),
+                        Math.min(Math.floor(actualCellWidth), img.width - Math.floor(cellX)),
+                        Math.min(Math.floor(actualCellHeight), img.height - Math.floor(cellY))
+                    );
+                    const cellDiv = createCellAnalysisUI(analysis, cellData);
+                    cellsDiv.appendChild(cellDiv);
+                }
+            }
+            
+            // 显示游戏状态
+            displayGameState(gameRows, gameStateDiv);
+        }
+        
+        function findGameBoard(ctx, width, height) {
+            const imageData = ctx.getImageData(0, 0, width, height);
+            const data = imageData.data;
+            
+            // 使用更智能的方法找到游戏板
+            // 1. 先找到所有格子的边缘
+            const edges = detectEdges(imageData);
+            
+            // 2. 找到水平和垂直线条
+            const horizontalLines = findHorizontalLines(edges, width, height);
+            const verticalLines = findVerticalLines(edges, width, height);
+            
+            console.log(`找到 ${horizontalLines.length} 条水平线, ${verticalLines.length} 条垂直线`);
+            
+            // 3. 如果找到了足够的线条，使用它们确定边界
+            if (horizontalLines.length >= 2 && verticalLines.length >= 2) {
+                const minY = Math.min(...horizontalLines);
+                const maxY = Math.max(...horizontalLines);
+                const minX = Math.min(...verticalLines);
+                const maxX = Math.max(...verticalLines);
+                
+                return {
+                    x: minX,
+                    y: minY,
+                    width: maxX - minX,
+                    height: maxY - minY
+                };
+            }
+            
+            // 4. 否则使用原始方法（找非白色区域）
+            let minX = width, maxX = 0;
+            let minY = height, maxY = 0;
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 4;
+                    const r = data[idx];
+                    const g = data[idx + 1];
+                    const b = data[idx + 2];
+                    
+                    // 如果不是白色或接近白色的背景
+                    if (r < 240 || g < 240 || b < 240) {
+                        minX = Math.min(minX, x);
+                        maxX = Math.max(maxX, x);
+                        minY = Math.min(minY, y);
+                        maxY = Math.max(maxY, y);
+                    }
+                }
+            }
+            
+            // 添加一些边距
+            const padding = 5;
+            minX = Math.max(0, minX - padding);
+            minY = Math.max(0, minY - padding);
+            maxX = Math.min(width - 1, maxX + padding);
+            maxY = Math.min(height - 1, maxY + padding);
+            
+            return {
+                x: minX,
+                y: minY,
+                width: maxX - minX,
+                height: maxY - minY
+            };
+        }
+        
+        // 简单的边缘检测
+        function detectEdges(imageData) {
+            const { width, height, data } = imageData;
+            const edges = new Uint8ClampedArray(width * height);
+            
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const idx = (y * width + x) * 4;
+                    
+                    // 计算水平和垂直梯度
+                    const gx = Math.abs(data[idx] - data[idx + 4]) + 
+                               Math.abs(data[idx + 1] - data[idx + 5]) + 
+                               Math.abs(data[idx + 2] - data[idx + 6]);
+                    
+                    const gy = Math.abs(data[idx] - data[idx + width * 4]) + 
+                               Math.abs(data[idx + 1] - data[idx + width * 4 + 1]) + 
+                               Math.abs(data[idx + 2] - data[idx + width * 4 + 2]);
+                    
+                    edges[y * width + x] = (gx + gy) > 50 ? 255 : 0;
+                }
+            }
+            
+            return edges;
+        }
+        
+        // 找水平线
+        function findHorizontalLines(edges, width, height) {
+            const lines = [];
+            const threshold = width * 0.3; // 至少30%的宽度才算一条线
+            
+            for (let y = 0; y < height; y++) {
+                let count = 0;
+                for (let x = 0; x < width; x++) {
+                    if (edges[y * width + x] > 0) count++;
+                }
+                if (count > threshold) {
+                    lines.push(y);
+                }
+            }
+            
+            // 合并相近的线
+            return mergeCloseLines(lines, 10);
+        }
+        
+        // 找垂直线
+        function findVerticalLines(edges, width, height) {
+            const lines = [];
+            const threshold = height * 0.3; // 至少30%的高度才算一条线
+            
+            for (let x = 0; x < width; x++) {
+                let count = 0;
+                for (let y = 0; y < height; y++) {
+                    if (edges[y * width + x] > 0) count++;
+                }
+                if (count > threshold) {
+                    lines.push(x);
+                }
+            }
+            
+            // 合并相近的线
+            return mergeCloseLines(lines, 10);
+        }
+        
+        // 合并相近的线条
+        function mergeCloseLines(lines, threshold) {
+            if (lines.length === 0) return [];
+            
+            lines.sort((a, b) => a - b);
+            const merged = [lines[0]];
+            
+            for (let i = 1; i < lines.length; i++) {
+                if (lines[i] - merged[merged.length - 1] > threshold) {
+                    merged.push(lines[i]);
+                }
+            }
+            
+            return merged;
+        }
+        
+        function analyzeCell(imageData, row, col) {
+            // 计算平均颜色
+            const avgColor = getAverageColor(imageData);
+            
+            // 先初步分类颜色
+            let state = classifyColor(avgColor);
+            
+            // 检测是否有字母
+            const hasLetter = detectLetterPresence(imageData);
+            
+            // 根据配色方案决定是否需要字母检测来细化分类
+            const schemeSelect = document.getElementById('colorSchemeSelect');
+            const scheme = schemeSelect ? schemeSelect.value : 'auto';
+            
+            if (scheme === 'auto') {
+                // 自动模式：使用字母检测结果来细化颜色分类
+                if (state === 'absent' || state === 'empty') {
+                    if (hasLetter) {
+                        state = 'absent';
+                    } else {
+                        state = 'empty';
+                    }
+                }
+            } else if (COLOR_SCHEMES[scheme]) {
+                // 特定配色方案模式：对于empty和absent的区分更依赖颜色
+                // 但仍然可以用字母检测作为辅助验证
+                if (state === 'empty' && hasLetter) {
+                    // 如果颜色判断为empty但检测到字母，可能是误判
+                    // 重新检查是否更接近absent
+                    const colors = COLOR_SCHEMES[scheme];
+                    const distToEmpty = colorDistance(avgColor, colors.empty);
+                    const distToAbsent = colorDistance(avgColor, colors.absent);
+                    if (distToAbsent < distToEmpty * 1.5) {
+                        state = 'absent';
+                    }
+                }
+            }
+            // 对于 correct 和 present，保持原判断（这些格子肯定有字母）
+            
+            // 尝试识别字母
+            let letter = '';
+            let confidence = 0;
+            if (hasLetter) {
+                // 注意：recognizeLetter 现在是异步的
+                // 这里先返回空值，稍后会在异步处理中更新
+                return {
+                    row,
+                    col,
+                    avgColor,
+                    state,
+                    hasLetter,
+                    letter,
+                    confidence,
+                    imageData // 保存imageData供后续OCR使用
+                };
+            }
+            
+            return {
+                row,
+                col,
+                avgColor,
+                state,
+                hasLetter,
+                letter,
+                confidence
+            };
+        }
+        
+        function getAverageColor(imageData) {
+            const data = imageData.data;
+            let r = 0, g = 0, b = 0;
+            let count = 0;
+            
+            // 采样整个格子，但跳过边缘（可能有边框）
+            const margin = Math.floor(Math.min(imageData.width, imageData.height) * 0.1);
+            const startX = margin;
+            const endX = imageData.width - margin;
+            const startY = margin;
+            const endY = imageData.height - margin;
+            
+            // 每隔几个像素采样一次，加快速度
+            const step = Math.max(1, Math.floor(Math.min(imageData.width, imageData.height) / 20));
+            
+            for (let y = startY; y < endY; y += step) {
+                for (let x = startX; x < endX; x += step) {
+                    const idx = (y * imageData.width + x) * 4;
+                    r += data[idx];
+                    g += data[idx + 1];
+                    b += data[idx + 2];
+                    count++;
+                }
+            }
+            
+            if (count === 0) {
+                // 如果没有采样到任何点，返回默认白色
+                return { r: 255, g: 255, b: 255 };
+            }
+            
+            return {
+                r: Math.round(r / count),
+                g: Math.round(g / count),
+                b: Math.round(b / count)
+            };
+        }
+        
+        // 定义不同网站的配色方案
+        const COLOR_SCHEMES = {
+            'wordle2.io': {
+                // wordle2.io配色
+                empty: { r: 250, g: 251, b: 255 },      // #fafbff
+                absent: { r: 155, g: 164, b: 187 },     // #9ba4bb
+                present: { r: 236, g: 188, b: 67 },     // #ecbc43
+                correct: { r: 122, g: 172, b: 80 },     // #7aac50
+                tolerance: 30  // 颜色容差
+            },
+            'lessgames.com': {
+                // lessgames.com/wordless配色
+                empty: { r: 43, g: 46, b: 47 },         // #2b2e2f
+                absent: { r: 109, g: 118, b: 124 },     // #6d767c
+                present: { r: 211, g: 187, b: 51 },     // #d3bb33
+                correct: { r: 96, g: 170, b: 51 },      // #60aa33
+                tolerance: 30
+            },
+            'auto': {
+                // 自动检测模式，使用原来的通用算法
+                tolerance: 40
+            }
+        };
+        
+        // 计算两个颜色之间的欧氏距离
+        function colorDistance(c1, c2) {
+            return Math.sqrt(
+                Math.pow(c1.r - c2.r, 2) +
+                Math.pow(c1.g - c2.g, 2) +
+                Math.pow(c1.b - c2.b, 2)
+            );
+        }
+        
+        function classifyColor(color) {
+            const { r, g, b } = color;
+            const schemeSelect = document.getElementById('colorSchemeSelect');
+            const scheme = schemeSelect ? schemeSelect.value : 'auto';
+            
+            // 如果选择了特定的配色方案
+            if (scheme !== 'auto' && COLOR_SCHEMES[scheme]) {
+                const colors = COLOR_SCHEMES[scheme];
+                const tolerance = colors.tolerance || 30;
+                
+                // 计算与每种状态颜色的距离
+                const distances = {
+                    empty: colorDistance(color, colors.empty),
+                    absent: colorDistance(color, colors.absent),
+                    present: colorDistance(color, colors.present),
+                    correct: colorDistance(color, colors.correct)
+                };
+                
+                // 找出最接近的颜色
+                let minDistance = Infinity;
+                let bestMatch = 'empty';
+                
+                for (const [state, distance] of Object.entries(distances)) {
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        bestMatch = state;
+                    }
+                }
+                
+                // 如果最小距离在容差范围内，返回匹配的状态
+                if (minDistance <= tolerance) {
+                    return bestMatch;
+                }
+                
+                // 如果没有好的匹配，根据亮度做基本判断
+                const brightness = (r + g + b) / 3;
+                if (brightness > 200) return 'empty';
+                if (brightness < 100) return 'absent';
+                return 'empty';
+            }
+            
+            // 自动检测模式 - 使用原来的通用算法
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const delta = max - min;
+            
+            // 绿色 - correct
+            if (g > r && g > b && g > 100 && delta > 30) {
+                if (r < g * 0.85 && b < g * 0.85) {
+                    return 'correct';
+                }
+            }
+            
+            // 黄色 - present
+            if (r > 150 && g > 100 && delta > 30) {
+                if (b < r * 0.7 && b < g * 0.7) {
+                    return 'present';
+                }
+            }
+            
+            // 灰色系
+            if (delta < 40) {
+                if (max > 210) return 'empty';
+                if (max < 120) return 'absent';
+                return 'absent';
+            }
+            
+            return 'absent';
+        }
+        
+        function detectLetterPresence(imageData) {
+            const { width, height, data } = imageData;
+            
+            // 计算整个格子的颜色统计
+            const colorStats = analyzeColorDistribution(imageData);
+            
+            // 判断是否有字母的多种策略
+            
+            // 策略1：颜色分布的标准差（有字母的格子颜色变化更大）
+            // 降低阈值，让检测更敏感
+            if (colorStats.stdDev > 20) {
+                return true;
+            }
+            
+            // 策略2：检测是否有明显的双峰分布（背景色和文字色）
+            if (colorStats.hasBimodal) {
+                return true;
+            }
+            
+            // 策略3：边缘检测（字母会产生更多边缘）
+            const edgeCount = detectEdgePixels(imageData);
+            const edgeRatio = edgeCount / (width * height);
+            if (edgeRatio > 0.02) { // 降低到2%，更容易检测到字母
+                return true;
+            }
+            
+            // 策略4：对于深色背景（absent格子），特别检测亮色像素
+            if (colorStats.avgBrightness < 130) { // 提高阈值到130
+                // 深色背景，检查是否有足够的亮色像素（可能是白色字母）
+                if (colorStats.brightPixelRatio > 0.03) { // 降低到3%
+                    return true;
+                }
+            }
+            
+            // 策略5：对于中等亮度（可能是灰色absent），检查对比度
+            if (colorStats.avgBrightness >= 70 && colorStats.avgBrightness <= 140) {
+                // 灰色背景，如果有一定比例的特别亮或特别暗的像素，可能有字母
+                if (colorStats.brightPixelRatio > 0.02 || colorStats.darkPixelRatio > 0.02) {
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+        
+        // 分析颜色分布
+        function analyzeColorDistribution(imageData) {
+            const { width, height, data } = imageData;
+            const brightnesses = [];
+            let sum = 0;
+            let brightCount = 0;
+            let darkCount = 0;
+            
+            // 收集所有像素的亮度值
+            for (let i = 0; i < data.length; i += 4) {
+                const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                brightnesses.push(brightness);
+                sum += brightness;
+                
+                if (brightness > 200) brightCount++;
+                if (brightness < 50) darkCount++;
+            }
+            
+            const avg = sum / brightnesses.length;
+            
+            // 计算标准差
+            let variance = 0;
+            for (const b of brightnesses) {
+                variance += Math.pow(b - avg, 2);
+            }
+            const stdDev = Math.sqrt(variance / brightnesses.length);
+            
+            // 检测双峰分布（简单版本：检查是否同时有很多亮像素和暗像素）
+            // 降低阈值到5%，让检测更敏感
+            const hasBimodal = (brightCount > brightnesses.length * 0.05 && 
+                               darkCount > brightnesses.length * 0.05);
+            
+            return {
+                avgBrightness: avg,
+                stdDev: stdDev,
+                hasBimodal: hasBimodal,
+                brightPixelRatio: brightCount / brightnesses.length,
+                darkPixelRatio: darkCount / brightnesses.length
+            };
+        }
+        
+        // 边缘检测
+        function detectEdgePixels(imageData) {
+            const { width, height, data } = imageData;
+            let edgeCount = 0;
+            
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const idx = (y * width + x) * 4;
+                    const center = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+                    
+                    // 检查水平和垂直方向的梯度
+                    const rightIdx = idx + 4;
+                    const bottomIdx = idx + width * 4;
+                    
+                    const right = (data[rightIdx] + data[rightIdx + 1] + data[rightIdx + 2]) / 3;
+                    const bottom = (data[bottomIdx] + data[bottomIdx + 1] + data[bottomIdx + 2]) / 3;
+                    
+                    const gradX = Math.abs(center - right);
+                    const gradY = Math.abs(center - bottom);
+                    
+                    // 如果梯度足够大，认为是边缘
+                    // 降低阈值到20，让检测更敏感
+                    if (gradX > 20 || gradY > 20) {
+                        edgeCount++;
+                    }
+                }
+            }
+            
+            return edgeCount;
+        }
+        
+        // 字母识别函数（增强版，返回调试信息）
+        async function recognizeLetter(imageData, returnDebugInfo = false) {
+            const debugInfo = {
+                stages: [],
+                confidences: {}
+            };
+            
+            // 创建临时canvas
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = imageData.width;
+            tempCanvas.height = imageData.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // 保存原始图像
+            if (returnDebugInfo) {
+                const originalCanvas = document.createElement('canvas');
+                originalCanvas.width = imageData.width;
+                originalCanvas.height = imageData.height;
+                const originalCtx = originalCanvas.getContext('2d');
+                originalCtx.putImageData(imageData, 0, 0);
+                debugInfo.stages.push({
+                    name: '原始图像',
+                    canvas: originalCanvas,
+                    dataUrl: originalCanvas.toDataURL()
+                });
+            }
+            
+            // 预处理：增强对比度
+            const processedData = preprocessForOCR(imageData);
+            tempCtx.putImageData(processedData, 0, 0);
+            
+            if (returnDebugInfo) {
+                const processedCanvas = document.createElement('canvas');
+                processedCanvas.width = imageData.width;
+                processedCanvas.height = imageData.height;
+                const processedCtx = processedCanvas.getContext('2d');
+                processedCtx.putImageData(processedData, 0, 0);
+                debugInfo.stages.push({
+                    name: '预处理后',
+                    canvas: processedCanvas,
+                    dataUrl: processedCanvas.toDataURL()
+                });
+            }
+            
+            try {
+                // 优化1：适度缩放（Tesseract最佳DPI约为300）
+                // 如果图像太小，放大到约100像素；否则保持原样或适度放大
+                let scaleFactor = 1;
+                const minSize = 50; // 最小边长目标
+                const maxSize = 150; // 最大边长目标
+                const currentMinSize = Math.min(imageData.width, imageData.height);
+                
+                if (currentMinSize < minSize) {
+                    scaleFactor = minSize / currentMinSize;
+                } else if (currentMinSize > maxSize) {
+                    scaleFactor = maxSize / currentMinSize;
+                }
+                
+                // 限制缩放因子在合理范围内
+                scaleFactor = Math.max(1, Math.min(3, scaleFactor));
+                
+                const scaledCanvas = document.createElement('canvas');
+                scaledCanvas.width = Math.round(tempCanvas.width * scaleFactor);
+                scaledCanvas.height = Math.round(tempCanvas.height * scaleFactor);
+                const scaledCtx = scaledCanvas.getContext('2d');
+                
+                // 优化2：使用高质量的图像缩放
+                scaledCtx.imageSmoothingEnabled = true;
+                scaledCtx.imageSmoothingQuality = 'high';
+                scaledCtx.drawImage(tempCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
+                
+                // 检测是否可能是细笔画字母（I, T, L等）
+                const isThinStroke = detectThinStroke(processedData);
+                
+                // 优化3：根据笔画粗细选择不同的OCR配置
+                const ocrConfig = {
+                    logger: m => {}, // 禁用日志
+                    
+                    // 核心配置：只保留最重要的参数
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', // 只识别大写字母
+                    
+                    // 优化4：根据笔画粗细选择PSM模式
+                    tessedit_pageseg_mode: isThinStroke ? '6' : '10', // 细笔画用PSM_SINGLE_BLOCK，否则PSM_SINGLE_CHAR
+                    
+                    // 优化5：使用默认OCR引擎（自动选择最佳）
+                    tessedit_ocr_engine_mode: '3', // DEFAULT - 自动选择最佳引擎
+                    
+                    // 优化6：简化参数，避免冲突
+                    classify_bln_numeric_mode: '0', // 禁用数字模式
+                    tessedit_single_match: '0', // 允许多个候选
+                };
+                
+                // 对细笔画字母添加特殊参数
+                if (isThinStroke) {
+                    ocrConfig.textord_min_linesize = '1.0'; // 降低最小行高要求
+                    ocrConfig.textord_excess_blobsize = '1.3'; // 允许更小的blob
+                }
+                
+                const result = await Tesseract.recognize(
+                    scaledCanvas,
+                    'eng',
+                    ocrConfig
+                );
+                
+                // 从所有候选中选择置信度最高的字母
+                let letter = '';
+                let confidence = 0;
+                
+                // 方法1：从symbols中找到置信度最高的字母
+                if (result.data.symbols && result.data.symbols.length > 0) {
+                    let bestSymbol = null;
+                    let bestConfidence = 0;
+                    
+                    result.data.symbols.forEach(symbol => {
+                        let cleanText = symbol.text.trim().toUpperCase();
+                        
+                        // 对细笔画的特殊处理：修正常见误识别
+                        if (isThinStroke) {
+                            // I 常被识别为 1, l, |
+                            if (cleanText === '1' || cleanText === 'L' || cleanText === '|') {
+                                // 如果是细笔画且识别为这些字符，很可能是 I
+                                cleanText = 'I';
+                            }
+                        }
+                        
+                        if (/^[A-Z]$/.test(cleanText) && symbol.confidence > bestConfidence) {
+                            bestSymbol = cleanText;
+                            bestConfidence = symbol.confidence;
+                        }
+                    });
+                    
+                    if (bestSymbol) {
+                        letter = bestSymbol;
+                        confidence = bestConfidence;
+                    }
+                }
+                
+                // 方法2：如果没有symbols，使用原始text
+                if (!letter && result.data.text) {
+                    const text = result.data.text.trim().toUpperCase();
+                    const cleanText = text.replace(/[^A-Z]/g, '');
+                    if (cleanText.length > 0) {
+                        letter = cleanText.charAt(0);
+                        confidence = result.data.confidence || 0;
+                    }
+                }
+                
+                // 收集所有字符的置信度（用于调试）
+                if (returnDebugInfo && result.data.symbols) {
+                    result.data.symbols.forEach(symbol => {
+                        if (/[A-Z]/.test(symbol.text)) {
+                            debugInfo.confidences[symbol.text] = symbol.confidence;
+                        }
+                    });
+                    
+                    // 添加OCR优化信息
+                    debugInfo.ocrOptimizations = {
+                        scaleFactor: scaleFactor.toFixed(2),
+                        psmMode: isThinStroke ? '6 (PSM_SINGLE_BLOCK)' : '10 (PSM_SINGLE_CHAR)',
+                        ocrEngine: '3 (DEFAULT)',
+                        originalSize: `${imageData.width}x${imageData.height}`,
+                        scaledSize: `${scaledCanvas.width}x${scaledCanvas.height}`,
+                        thinStroke: isThinStroke,
+                        tips: [
+                            scaleFactor === 1 ? '图像未缩放（尺寸适中）' : 
+                            scaleFactor < 2 ? '适度缩放，质量最佳' : 
+                            '图像放大以提高识别率',
+                            confidence > 85 ? '✅ 识别置信度很高' : 
+                            confidence > 70 ? '⚠️ 识别置信度中等' : 
+                            '❌ 识别置信度低，可能需要调整',
+                            isThinStroke ? '🔍 检测到细笔画字母（I/T/L），使用特殊参数' : '标准笔画，使用常规参数'
+                        ]
+                    };
+                }
+                
+                // 简化：不再尝试增强对比度，直接返回最高置信度的结果
+                // 如果没有识别到任何字母，尝试使用不同的PSM模式
+                if (!letter && imageData) {
+                    console.log('第一次识别未找到字母，尝试PSM_RAW_LINE模式');
+                    
+                    // 尝试不同的PSM模式（有时对特殊情况效果更好）
+                    const result2 = await Tesseract.recognize(
+                        scaledCanvas,  // 使用同样的缩放图像
+                        'eng',
+                        {
+                            logger: m => {},
+                            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+                            tessedit_pageseg_mode: '13', // PSM_RAW_LINE - 原始文本行
+                            tessedit_ocr_engine_mode: '3', // DEFAULT
+                        }
+                    );
+                    
+                    // 从第二次识别中选择置信度最高的字母
+                    if (result2.data.symbols && result2.data.symbols.length > 0) {
+                        result2.data.symbols.forEach(symbol => {
+                            const cleanText = symbol.text.trim().toUpperCase();
+                            if (/^[A-Z]$/.test(cleanText) && symbol.confidence > confidence) {
+                                letter = cleanText;
+                                confidence = symbol.confidence;
+                                
+                                if (returnDebugInfo) {
+                                    debugInfo.confidences[cleanText] = symbol.confidence;
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                if (returnDebugInfo) {
+                    return {
+                        letter: letter,
+                        confidence: Math.round(confidence),
+                        debugInfo: debugInfo
+                    };
+                }
+                
+                return {
+                    letter: letter,
+                    confidence: Math.round(confidence)
+                };
+            } catch (error) {
+                console.error('OCR错误:', error);
+                // 如果OCR失败，回退到简单的模板匹配
+                return fallbackLetterRecognition(imageData);
+            }
+        }
+        
+        // 检测是否是细笔画（如字母I、T、L）
+        function detectThinStroke(imageData) {
+            const { width, height, data } = imageData;
+            let blackPixels = 0;
+            let totalPixels = width * height;
+            
+            // 统计黑色像素（文字）
+            for (let i = 0; i < data.length; i += 4) {
+                const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                if (brightness < 128) { // 黑色或深色
+                    blackPixels++;
+                }
+            }
+            
+            const blackRatio = blackPixels / totalPixels;
+            
+            // 如果黑色像素少于8%，认为是细笔画
+            // I通常只有3-5%，T约5-7%，L约6-8%
+            return blackRatio < 0.08;
+        }
+        
+        // 预处理图像以提高OCR准确度
+        function preprocessForOCR(imageData) {
+            const { width, height, data } = imageData;
+            const output = new ImageData(width, height);
+            const outputData = output.data;
+            
+            // 获取当前配色方案
+            const schemeSelect = document.getElementById('colorSchemeSelect');
+            const scheme = schemeSelect ? schemeSelect.value : 'auto';
+            
+            // 简单而可靠的方法：使用Otsu's方法找阈值
+            // 1. 计算直方图
+            const histogram = new Array(256).fill(0);
+            let totalPixels = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                const brightness = Math.round((data[i] + data[i + 1] + data[i + 2]) / 3);
+                histogram[brightness]++;
+                totalPixels++;
+            }
+            
+            // 2. Otsu's方法找最佳阈值
+            let sum = 0;
+            for (let i = 0; i < 256; i++) {
+                sum += i * histogram[i];
+            }
+            
+            let sumB = 0;
+            let wB = 0;
+            let wF = 0;
+            let maxVariance = 0;
+            let threshold = 0;
+            
+            for (let t = 0; t < 256; t++) {
+                wB += histogram[t];
+                if (wB === 0) continue;
+                
+                wF = totalPixels - wB;
+                if (wF === 0) break;
+                
+                sumB += t * histogram[t];
+                
+                const mB = sumB / wB;
+                const mF = (sum - sumB) / wF;
+                
+                const variance = wB * wF * (mB - mF) * (mB - mF);
+                
+                if (variance > maxVariance) {
+                    maxVariance = variance;
+                    threshold = t;
+                }
+            }
+            
+            // 3. 判断背景是深色还是浅色
+            let darkPixels = 0;
+            let lightPixels = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                if (brightness < threshold) {
+                    darkPixels++;
+                } else {
+                    lightPixels++;
+                }
+            }
+            
+            const isDarkBackground = darkPixels > lightPixels;
+            
+            // 4. 根据配色方案微调阈值
+            let adjustedThreshold = threshold;
+            if (scheme === 'lessgames.com') {
+                // lessgames.com通常有深色背景，稍微调整阈值以保留更多细节
+                // 降低阈值可以让更多像素被识别为文字（避免细笔画丢失）
+                adjustedThreshold = isDarkBackground ? threshold - 15 : threshold + 15;
+            } else if (scheme === 'wordle2.io') {
+                // wordle2.io可能有各种颜色，稍微调整以保留细节
+                adjustedThreshold = isDarkBackground ? threshold - 5 : threshold + 5;
+            } else {
+                // 自动模式：轻微调整
+                adjustedThreshold = isDarkBackground ? threshold - 8 : threshold + 8;
+            }
+            
+            // 确保阈值在有效范围内
+            adjustedThreshold = Math.max(0, Math.min(255, adjustedThreshold));
+            
+            // 调试信息（可以在控制台看到）
+            console.log(`预处理调试信息:
+                Otsu阈值: ${threshold}
+                调整后阈值: ${adjustedThreshold}
+                背景类型: ${isDarkBackground ? '深色' : '浅色'}
+                深色像素: ${darkPixels} (${(darkPixels/totalPixels*100).toFixed(1)}%)
+                浅色像素: ${lightPixels} (${(lightPixels/totalPixels*100).toFixed(1)}%)
+                配色方案: ${scheme}
+                目标: 输出白底黑字（OCR标准格式）
+            `);
+            
+            // 5. 第一步二值化
+            const binaryData = new Uint8ClampedArray(width * height);
+            for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+                const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                binaryData[j] = brightness > adjustedThreshold ? 1 : 0;
+            }
+            
+            // 6. 改进的检测方法：分析原始图像的边缘和中心亮度
+            // 不是基于二值化后的数据，而是基于原始亮度
+            const edgeSize = Math.floor(Math.min(width, height) * 0.15);
+            let edgeBrightSum = 0, edgeCount = 0;
+            let centerBrightSum = 0, centerCount = 0;
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 4;
+                    const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+                    
+                    const isEdge = x < edgeSize || x >= width - edgeSize || 
+                                  y < edgeSize || y >= height - edgeSize;
+                    
+                    if (isEdge) {
+                        edgeBrightSum += brightness;
+                        edgeCount++;
+                    } else {
+                        centerBrightSum += brightness;
+                        centerCount++;
+                    }
+                }
+            }
+            
+            const edgeAvgBright = edgeBrightSum / edgeCount;
+            const centerAvgBright = centerBrightSum / centerCount;
+            
+            // 判断是否需要反转
+            // 如果中心比边缘亮，说明文字是白色的，背景是深色的，需要反转成黑字白背景
+            let needInvert = false;
+            
+            if (centerAvgBright > edgeAvgBright + 10) {
+                // 白字深背景：需要反转成黑字白背景
+                needInvert = true;
+                console.log('检测到：白字深背景，需要反转');
+            } else if (edgeAvgBright > centerAvgBright + 10) {
+                // 黑字浅背景：已经是正确格式
+                needInvert = false;
+                console.log('检测到：黑字浅背景，不需要反转');
+            } else {
+                // 对比度不明显，使用二值化后的统计
+                let edgeWhite = 0, edgeBlack = 0;
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        const idx = y * width + x;
+                        const isEdge = x < edgeSize || x >= width - edgeSize || 
+                                      y < edgeSize || y >= height - edgeSize;
+                        if (isEdge) {
+                            if (binaryData[idx] === 1) edgeWhite++;
+                            else edgeBlack++;
+                        }
+                    }
+                }
+                needInvert = edgeWhite < edgeBlack;
+            }
+            
+            // 检查是否整个图像几乎全白或全黑（可能是阈值失效）
+            let totalWhite = 0, totalBlack = 0;
+            for (let i = 0; i < binaryData.length; i++) {
+                if (binaryData[i] === 1) totalWhite++;
+                else totalBlack++;
+            }
+            
+            // 特殊情况处理：如果图像几乎全白或全黑（Otsu失效）
+            if (totalWhite > totalPixels * 0.95 || totalBlack > totalPixels * 0.95) {
+                console.log('警告：Otsu阈值可能失效，使用备用方法');
+                
+                // 备用方法：重新计算阈值
+                // 找最亮和最暗的10%像素的平均值
+                const sortedBrightness = [];
+                for (let i = 0; i < data.length; i += 4) {
+                    sortedBrightness.push((data[i] + data[i + 1] + data[i + 2]) / 3);
+                }
+                sortedBrightness.sort((a, b) => a - b);
+                
+                const tenPercent = Math.floor(sortedBrightness.length * 0.1);
+                let darkAvg = 0, lightAvg = 0;
+                
+                for (let i = 0; i < tenPercent; i++) {
+                    darkAvg += sortedBrightness[i];
+                    lightAvg += sortedBrightness[sortedBrightness.length - 1 - i];
+                }
+                darkAvg /= tenPercent;
+                lightAvg /= tenPercent;
+                
+                // 使用新阈值重新二值化
+                const newThreshold = (darkAvg + lightAvg) / 2;
+                console.log(`使用备用阈值: ${newThreshold} (原Otsu: ${threshold})`);
+                
+                // 重新二值化
+                for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+                    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                    binaryData[j] = brightness > newThreshold ? 1 : 0;
+                }
+                
+                // 重新统计以决定是否反转
+                let newWhiteCount = 0;
+                for (let i = 0; i < binaryData.length; i++) {
+                    if (binaryData[i] === 1) newWhiteCount++;
+                }
+                
+                // 一般情况下，背景像素更多，文字像素更少
+                // 如果白色像素更多，说明白色是背景，不需要反转（已经是OCR标准格式）
+                // 如果黑色像素更多，说明黑色是背景，需要反转为白底黑字
+                needInvert = newWhiteCount <= binaryData.length * 0.5;
+            }
+            
+            console.log(`颜色分布:
+                边缘平均亮度: ${edgeAvgBright.toFixed(1)}
+                中心平均亮度: ${centerAvgBright.toFixed(1)}
+                亮度差: ${(centerAvgBright - edgeAvgBright).toFixed(1)}
+                需要反转: ${needInvert} (目标：白底黑字)
+            `);
+            
+            // 7. 可选：对细笔画进行轻微膨胀（特别是T、I、L等）
+            // 计算黑色像素的比例
+            let blackPixelRatio = 0;
+            for (let i = 0; i < binaryData.length; i++) {
+                if ((needInvert && binaryData[i] === 1) || (!needInvert && binaryData[i] === 0)) {
+                    blackPixelRatio++;
+                }
+            }
+            blackPixelRatio /= binaryData.length;
+            
+            // 如果黑色像素太少（<5%），可能是细笔画，进行轻微膨胀
+            const dilatedData = new Uint8ClampedArray(binaryData);
+            if (blackPixelRatio < 0.05 && blackPixelRatio > 0.01) {
+                console.log('检测到细笔画，进行轻微膨胀处理');
+                for (let y = 1; y < height - 1; y++) {
+                    for (let x = 1; x < width - 1; x++) {
+                        const idx = y * width + x;
+                        // 如果周围有黑色像素，当前像素也变黑（3x3膨胀）
+                        const targetValue = needInvert ? 1 : 0;
+                        if (binaryData[idx - width] === targetValue ||
+                            binaryData[idx + width] === targetValue ||
+                            binaryData[idx - 1] === targetValue ||
+                            binaryData[idx + 1] === targetValue) {
+                            dilatedData[idx] = targetValue;
+                        }
+                    }
+                }
+            }
+            
+            // 8. 生成最终的白底黑字图像（OCR标准格式）
+            for (let i = 0, j = 0; i < outputData.length; i += 4, j++) {
+                let pixelValue;
+                const useData = blackPixelRatio < 0.05 && blackPixelRatio > 0.01 ? dilatedData : binaryData;
+                
+                if (needInvert) {
+                    // 需要反转（深色背景 → 白底黑字）：1（白）变0（黑），0（黑）变255（白）
+                    pixelValue = useData[j] === 1 ? 0 : 255;
+                } else {
+                    // 不需要反转（已经是白底黑字）：1（白）保持255（白），0（黑）保持0（黑）
+                    pixelValue = useData[j] === 1 ? 255 : 0;
+                }
+                
+                outputData[i] = pixelValue;
+                outputData[i + 1] = pixelValue;
+                outputData[i + 2] = pixelValue;
+                outputData[i + 3] = 255;
+            }
+            
+            return output;
+        }
+        
+        // 增强对比度的预处理（更激进的方法）
+        function enhanceContrastForOCR(imageData) {
+            const { width, height, data } = imageData;
+            
+            // 第一步：使用改进的自适应阈值处理
+            const enhanced1 = applyAdaptiveThreshold(imageData);
+            
+            // 第二步：形态学闭运算（连接断开的笔画）
+            const enhanced2 = applyMorphologicalClosing(enhanced1, width, height);
+            
+            // 第三步：去除小噪点
+            const enhanced3 = removeSmallNoise(enhanced2, width, height);
+            
+            return enhanced3;
+        }
+        
+        // 自适应阈值处理
+        function applyAdaptiveThreshold(imageData) {
+            const { width, height, data } = imageData;
+            const output = new ImageData(width, height);
+            const outputData = output.data;
+            
+            // 计算局部平均值和标准差
+            const windowSize = Math.max(3, Math.min(width, height) / 8);
+            const halfWindow = Math.floor(windowSize / 2);
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const centerIdx = (y * width + x) * 4;
+                    
+                    // 计算窗口内的统计信息
+                    let sum = 0, count = 0, sumSquared = 0;
+                    
+                    for (let dy = -halfWindow; dy <= halfWindow; dy++) {
+                        for (let dx = -halfWindow; dx <= halfWindow; dx++) {
+                            const ny = y + dy;
+                            const nx = x + dx;
+                            if (ny >= 0 && ny < height && nx >= 0 && nx < width) {
+                                const idx = (ny * width + nx) * 4;
+                                const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+                                sum += brightness;
+                                sumSquared += brightness * brightness;
+                                count++;
+                            }
+                        }
+                    }
+                    
+                    const mean = sum / count;
+                    const variance = (sumSquared / count) - (mean * mean);
+                    const stdDev = Math.sqrt(variance);
+                    
+                    // 当前像素的亮度
+                    const currentBrightness = (data[centerIdx] + data[centerIdx + 1] + data[centerIdx + 2]) / 3;
+                    
+                    // 自适应阈值：均值 - k * 标准差
+                    const k = 0.2;
+                    const threshold = mean - k * stdDev;
+                    
+                    // 二值化决策
+                    const isText = currentBrightness < threshold;
+                    const value = isText ? 0 : 255; // 黑字白底
+                    
+                    outputData[centerIdx] = outputData[centerIdx + 1] = outputData[centerIdx + 2] = value;
+                    outputData[centerIdx + 3] = 255;
+                }
+            }
+            
+            return output;
+        }
+        
+        // 形态学闭运算（先膨胀后腐蚀，连接断开的笔画）
+        function applyMorphologicalClosing(imageData, width, height) {
+            // 膨胀操作
+            const dilated = applyDilation(imageData, width, height);
+            // 腐蚀操作
+            const closed = applyErosion(dilated, width, height);
+            return closed;
+        }
+        
+        // 膨胀操作
+        function applyDilation(imageData, width, height) {
+            const output = new ImageData(width, height);
+            const data = imageData.data;
+            const outputData = output.data;
+            
+            // 3x3结构元素
+            const kernel = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 0], [0, 1], [1, -1], [1, 0], [1, 1]];
+            
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    let hasBlackNeighbor = false;
+                    
+                    for (const [dy, dx] of kernel) {
+                        const ny = y + dy;
+                        const nx = x + dx;
+                        const idx = (ny * width + nx) * 4;
+                        if (data[idx] === 0) { // 如果邻域有黑像素
+                            hasBlackNeighbor = true;
+                            break;
+                        }
+                    }
+                    
+                    const currentIdx = (y * width + x) * 4;
+                    const value = hasBlackNeighbor ? 0 : 255;
+                    outputData[currentIdx] = outputData[currentIdx + 1] = outputData[currentIdx + 2] = value;
+                    outputData[currentIdx + 3] = 255;
+                }
+            }
+            
+            // 复制边界
+            for (let i = 0; i < data.length; i += 4) {
+                if (outputData[i + 3] === 0) { // 未处理的像素
+                    outputData[i] = data[i];
+                    outputData[i + 1] = data[i + 1];
+                    outputData[i + 2] = data[i + 2];
+                    outputData[i + 3] = 255;
+                }
+            }
+            
+            return output;
+        }
+        
+        // 腐蚀操作
+        function applyErosion(imageData, width, height) {
+            const output = new ImageData(width, height);
+            const data = imageData.data;
+            const outputData = output.data;
+            
+            // 3x3结构元素
+            const kernel = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 0], [0, 1], [1, -1], [1, 0], [1, 1]];
+            
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    let allNeighborsBlack = true;
+                    
+                    for (const [dy, dx] of kernel) {
+                        const ny = y + dy;
+                        const nx = x + dx;
+                        const idx = (ny * width + nx) * 4;
+                        if (data[idx] !== 0) { // 如果邻域有白像素
+                            allNeighborsBlack = false;
+                            break;
+                        }
+                    }
+                    
+                    const currentIdx = (y * width + x) * 4;
+                    const value = allNeighborsBlack ? 0 : 255;
+                    outputData[currentIdx] = outputData[currentIdx + 1] = outputData[currentIdx + 2] = value;
+                    outputData[currentIdx + 3] = 255;
+                }
+            }
+            
+            // 复制边界
+            for (let i = 0; i < data.length; i += 4) {
+                if (outputData[i + 3] === 0) { // 未处理的像素
+                    outputData[i] = data[i];
+                    outputData[i + 1] = data[i + 1];
+                    outputData[i + 2] = data[i + 2];
+                    outputData[i + 3] = 255;
+                }
+            }
+            
+            return output;
+        }
+        
+        // 去除小噪点
+        function removeSmallNoise(imageData, width, height) {
+            const output = new ImageData(width, height);
+            const data = imageData.data;
+            const outputData = output.data;
+            
+            // 复制原始数据
+            for (let i = 0; i < data.length; i++) {
+                outputData[i] = data[i];
+            }
+            
+            // 连通组件分析，去除小的黑色区域
+            const visited = new Array(width * height).fill(false);
+            const minComponentSize = Math.max(3, (width * height) / 100); // 至少要有1%的像素
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = y * width + x;
+                    if (!visited[idx] && data[idx * 4] === 0) { // 黑色像素且未访问
+                        const component = floodFill(data, visited, x, y, width, height);
+                        if (component.length < minComponentSize) {
+                            // 将小组件变为白色
+                            for (const pixelIdx of component) {
+                                outputData[pixelIdx * 4] = 255;
+                                outputData[pixelIdx * 4 + 1] = 255;
+                                outputData[pixelIdx * 4 + 2] = 255;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return output;
+        }
+        
+        // 泛洪填充算法
+        function floodFill(data, visited, startX, startY, width, height) {
+            const stack = [{x: startX, y: startY}];
+            const component = [];
+            
+            while (stack.length > 0) {
+                const {x, y} = stack.pop();
+                const idx = y * width + x;
+                
+                if (x < 0 || x >= width || y < 0 || y >= height || visited[idx] || data[idx * 4] !== 0) {
+                    continue;
+                }
+                
+                visited[idx] = true;
+                component.push(idx);
+                
+                // 添加4连通邻域
+                stack.push({x: x + 1, y: y});
+                stack.push({x: x - 1, y: y});
+                stack.push({x: x, y: y + 1});
+                stack.push({x: x, y: y - 1});
+            }
+            
+            return component;
+        }
+        
+        // 简单的后备字母识别
+        function fallbackLetterRecognition(imageData) {
+            // 保留原来的简单模板匹配作为后备
+            const letterImage = extractLetterRegion(imageData);
+            const features = extractLetterFeatures(letterImage);
+            const result = matchLetterTemplate(features);
+            return result;
+        }
+        
+        // 提取字母区域（去除背景）
+        function extractLetterRegion(imageData) {
+            const { width, height, data } = imageData;
+            const binaryImage = new Uint8ClampedArray(width * height);
+            
+            // 先找到背景色（边缘的主要颜色）
+            let bgBrightness = 0;
+            let bgCount = 0;
+            const edgeWidth = Math.floor(width * 0.1);
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    // 只采样边缘
+                    if (x < edgeWidth || x >= width - edgeWidth || 
+                        y < edgeWidth || y >= height - edgeWidth) {
+                        const idx = (y * width + x) * 4;
+                        bgBrightness += (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+                        bgCount++;
+                    }
+                }
+            }
+            
+            const avgBg = bgCount > 0 ? bgBrightness / bgCount : 128;
+            
+            // 动态阈值：背景亮度的中点
+            const threshold = avgBg > 128 ? avgBg - 40 : avgBg + 40;
+            
+            // 转换为二值图像，根据背景是深色还是浅色决定反转
+            const invertColors = avgBg < 128;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                if (invertColors) {
+                    // 深色背景，浅色文字
+                    binaryImage[i / 4] = brightness > threshold ? 1 : 0;
+                } else {
+                    // 浅色背景，深色文字
+                    binaryImage[i / 4] = brightness < threshold ? 1 : 0;
+                }
+            }
+            
+            // 找到字母的边界
+            let minX = width, maxX = 0;
+            let minY = height, maxY = 0;
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    if (binaryImage[y * width + x] === 1) {
+                        minX = Math.min(minX, x);
+                        maxX = Math.max(maxX, x);
+                        minY = Math.min(minY, y);
+                        maxY = Math.max(maxY, y);
+                    }
+                }
+            }
+            
+            // 如果没有找到字母区域
+            if (minX > maxX || minY > maxY) {
+                return { data: binaryImage, width, height, bounds: null };
+            }
+            
+            return {
+                data: binaryImage,
+                width,
+                height,
+                bounds: { minX, maxX, minY, maxY }
+            };
+        }
+        
+        // 提取字母特征
+        function extractLetterFeatures(letterImage) {
+            const { data, width, height, bounds } = letterImage;
+            
+            if (!bounds) {
+                return { 
+                    verticalProfile: [], 
+                    horizontalProfile: [],
+                    density: 0,
+                    aspectRatio: 1
+                };
+            }
+            
+            const { minX, maxX, minY, maxY } = bounds;
+            const letterWidth = maxX - minX + 1;
+            const letterHeight = maxY - minY + 1;
+            
+            // 垂直投影（每列的黑点数）
+            const verticalProfile = [];
+            for (let x = minX; x <= maxX; x++) {
+                let count = 0;
+                for (let y = minY; y <= maxY; y++) {
+                    if (data[y * width + x] === 1) count++;
+                }
+                verticalProfile.push(count / letterHeight);
+            }
+            
+            // 水平投影（每行的黑点数）
+            const horizontalProfile = [];
+            for (let y = minY; y <= maxY; y++) {
+                let count = 0;
+                for (let x = minX; x <= maxX; x++) {
+                    if (data[y * width + x] === 1) count++;
+                }
+                horizontalProfile.push(count / letterWidth);
+            }
+            
+            // 密度特征
+            let blackPixels = 0;
+            for (let y = minY; y <= maxY; y++) {
+                for (let x = minX; x <= maxX; x++) {
+                    if (data[y * width + x] === 1) blackPixels++;
+                }
+            }
+            const density = blackPixels / (letterWidth * letterHeight);
+            
+            // 宽高比
+            const aspectRatio = letterWidth / letterHeight;
+            
+            return {
+                verticalProfile,
+                horizontalProfile,
+                density,
+                aspectRatio,
+                width: letterWidth,
+                height: letterHeight
+            };
+        }
+        
+        // 模板匹配识别字母
+        function matchLetterTemplate(features) {
+            // 简化的字母特征模板
+            const templates = {
+                'A': { density: 0.35, aspectRatio: 0.7, hasHole: true },
+                'B': { density: 0.45, aspectRatio: 0.6, hasHole: true },
+                'C': { density: 0.30, aspectRatio: 0.7, hasHole: false },
+                'D': { density: 0.40, aspectRatio: 0.7, hasHole: true },
+                'E': { density: 0.35, aspectRatio: 0.6, hasHole: false },
+                'F': { density: 0.30, aspectRatio: 0.6, hasHole: false },
+                'G': { density: 0.35, aspectRatio: 0.7, hasHole: false },
+                'H': { density: 0.35, aspectRatio: 0.7, hasHole: false },
+                'I': { density: 0.25, aspectRatio: 0.3, hasHole: false },
+                'J': { density: 0.25, aspectRatio: 0.5, hasHole: false },
+                'K': { density: 0.35, aspectRatio: 0.7, hasHole: false },
+                'L': { density: 0.25, aspectRatio: 0.6, hasHole: false },
+                'M': { density: 0.40, aspectRatio: 0.8, hasHole: false },
+                'N': { density: 0.35, aspectRatio: 0.7, hasHole: false },
+                'O': { density: 0.35, aspectRatio: 0.8, hasHole: true },
+                'P': { density: 0.35, aspectRatio: 0.6, hasHole: true },
+                'Q': { density: 0.40, aspectRatio: 0.8, hasHole: true },
+                'R': { density: 0.40, aspectRatio: 0.7, hasHole: true },
+                'S': { density: 0.35, aspectRatio: 0.6, hasHole: false },
+                'T': { density: 0.25, aspectRatio: 0.7, hasHole: false },
+                'U': { density: 0.30, aspectRatio: 0.7, hasHole: false },
+                'V': { density: 0.30, aspectRatio: 0.8, hasHole: false },
+                'W': { density: 0.40, aspectRatio: 0.9, hasHole: false },
+                'X': { density: 0.30, aspectRatio: 0.7, hasHole: false },
+                'Y': { density: 0.25, aspectRatio: 0.7, hasHole: false },
+                'Z': { density: 0.30, aspectRatio: 0.7, hasHole: false }
+            };
+            
+            let bestMatch = '';
+            let bestScore = 0;
+            
+            // 基于密度和宽高比的简单匹配
+            for (const [letter, template] of Object.entries(templates)) {
+                const densityDiff = Math.abs(features.density - template.density);
+                const aspectDiff = Math.abs(features.aspectRatio - template.aspectRatio);
+                
+                // 计算相似度得分
+                const score = Math.max(0, 1 - densityDiff * 2 - aspectDiff);
+                
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMatch = letter;
+                }
+            }
+            
+            // 如果特征太弱，返回空
+            if (features.density < 0.1 || bestScore < 0.3) {
+                return { letter: '', confidence: 0 };
+            }
+            
+            return {
+                letter: bestMatch,
+                confidence: Math.round(bestScore * 100)
+            };
+        }
+        
+        // 显示OCR调试面板
+        async function showDebugPanel(cellData, row, col) {
+            const panel = document.getElementById('ocrDebugPanel');
+            const debugContent = document.getElementById('debugContent');
+            const confidenceChart = document.getElementById('confidenceChart');
+            
+            // 显示加载中
+            debugContent.innerHTML = '<p>正在分析字母识别过程...</p>';
+            confidenceChart.innerHTML = '';
+            panel.classList.add('active');
+            
+            // 执行带调试信息的识别
+            const result = await recognizeLetter(cellData, true);
+            
+            // 显示各个阶段的图像
+            debugContent.innerHTML = '';
+            if (result.debugInfo && result.debugInfo.stages) {
+                result.debugInfo.stages.forEach(stage => {
+                    const stageDiv = document.createElement('div');
+                    stageDiv.className = 'debug-stage';
+                    stageDiv.innerHTML = `
+                        <h4>${stage.name}</h4>
+                        <img src="${stage.dataUrl}" class="debug-canvas" />
+                    `;
+                    debugContent.appendChild(stageDiv);
+                });
+            }
+            
+            // 显示置信度图表
+            confidenceChart.innerHTML = '<h4>字母置信度分布</h4>';
+            
+            // 获取所有字母的置信度
+            const confidences = result.debugInfo?.confidences || {};
+            
+            // 如果有识别结果，确保它在列表中
+            if (result.letter && !confidences[result.letter]) {
+                confidences[result.letter] = result.confidence;
+            }
+            
+            // 排序并显示前10个
+            const sortedConfidences = Object.entries(confidences)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10);
+            
+            if (sortedConfidences.length === 0) {
+                confidenceChart.innerHTML += '<p style="color: #999;">未检测到任何字母</p>';
+            } else {
+                sortedConfidences.forEach(([letter, conf]) => {
+                    const barDiv = document.createElement('div');
+                    barDiv.className = 'confidence-bar';
+                    const isSelected = letter === result.letter;
+                    barDiv.innerHTML = `
+                        <div class="confidence-bar-label" style="${isSelected ? 'color: #4CAF50; font-weight: bold;' : ''}">${letter}</div>
+                        <div class="confidence-bar-track">
+                            <div class="confidence-bar-fill" style="width: ${conf}%; background: ${isSelected ? '#4CAF50' : '#888'};"></div>
+                        </div>
+                        <div class="confidence-bar-value">${Math.round(conf)}%</div>
+                    `;
+                    confidenceChart.appendChild(barDiv);
+                });
+            }
+            
+            // 添加汇总信息
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = 'debug-info';
+            summaryDiv.innerHTML = `
+                <strong>识别结果：</strong> ${result.letter || '无'}<br>
+                <strong>置信度：</strong> ${result.confidence}%<br>
+                <strong>格子位置：</strong> [${row}, ${col}]
+            `;
+            confidenceChart.appendChild(summaryDiv);
+        }
+        
+        function closeDebugPanel() {
+            document.getElementById('ocrDebugPanel').classList.remove('active');
+        }
+        
+        function createCellAnalysisUI(analysis, cellData) {
+            const div = document.createElement('div');
+            div.className = 'cell-analysis';
+            
+            // 添加点击事件
+            div.onclick = () => {
+                if (analysis.hasLetter) {
+                    showDebugPanel(cellData, analysis.row, analysis.col);
+                }
+            };
+            
+            // 创建小画布显示格子
+            const canvas = document.createElement('canvas');
+            canvas.width = 60;
+            canvas.height = 60;
+            canvas.className = 'cell-preview';
+            const ctx = canvas.getContext('2d');
+            
+            // 缩放并绘制格子数据到60x60的画布
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = cellData.width;
+            tempCanvas.height = cellData.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.putImageData(cellData, 0, 0);
+            
+            ctx.drawImage(tempCanvas, 0, 0, cellData.width, cellData.height, 0, 0, 60, 60);
+            
+            div.innerHTML = `
+                <div class="cell-header">
+                    <div class="cell-info">
+                        <div>格子 [${analysis.row}, ${analysis.col}]</div>
+                        <div style="margin-top: 5px;">
+                            <span class="color-box" style="background: rgb(${analysis.avgColor.r}, ${analysis.avgColor.g}, ${analysis.avgColor.b})"></span>
+                            <span style="font-size: 12px;">RGB(${analysis.avgColor.r}, ${analysis.avgColor.g}, ${analysis.avgColor.b})</span>
+                        </div>
+                        <div style="margin-top: 5px;">
+                            <span class="state-badge state-${analysis.state}">${analysis.state.toUpperCase()}</span>
+                            ${analysis.hasLetter ? '<span style="margin-left: 5px; color: green;">✓ 有字母</span>' : '<span style="margin-left: 5px; color: #999;">✗ 无字母</span>'}
+                        </div>
+                        ${analysis.letter ? `
+                        <div style="margin-top: 5px; background: #e3f2fd; padding: 5px; border-radius: 3px;">
+                            <strong style="font-size: 18px; color: #1976d2;">${analysis.letter}</strong>
+                            <span style="margin-left: 10px; font-size: 12px; color: #666;">置信度: ${analysis.confidence}%</span>
+                        </div>
+                        ` : ''}
+                        ${analysis.hasLetter ? '<div style="margin-top: 5px; font-size: 11px; color: #1976d2;">🔍 点击查看OCR调试信息</div>' : ''}
+                    </div>
+                </div>
+            `;
+            
+            div.insertBefore(canvas, div.firstChild);
+            
+            return div;
+        }
+        
+        function displayGameState(gameRows, container) {
+            // 清空容器
+            container.innerHTML = '';
+            
+            // 统计信息
+            let totalCells = 0;
+            let recognizedLetters = 0;
+            let totalConfidence = 0;
+            let letterCounts = {};
+            
+            // 创建游戏板显示
+            const boardDiv = document.createElement('div');
+            boardDiv.className = 'game-board';
+            
+            gameRows.forEach(row => {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'wordle-row';
+                
+                row.forEach(cell => {
+                    totalCells++;
+                    const cellDiv = document.createElement('div');
+                    cellDiv.className = `wordle-cell ${cell.state !== 'empty' ? cell.state : ''}`;
+                    
+                    if (cell.letter) {
+                        cellDiv.textContent = cell.letter;
+                        recognizedLetters++;
+                        totalConfidence += cell.confidence;
+                        letterCounts[cell.letter] = (letterCounts[cell.letter] || 0) + 1;
+                        
+                        // 添加置信度标签
+                        if (cell.confidence > 0) {
+                            const badge = document.createElement('span');
+                            badge.className = 'confidence-badge';
+                            badge.textContent = `${cell.confidence}%`;
+                            cellDiv.appendChild(badge);
+                        }
+                    } else if (cell.hasLetter) {
+                        cellDiv.textContent = '?';
+                    }
+                    
+                    rowDiv.appendChild(cellDiv);
+                });
+                
+                boardDiv.appendChild(rowDiv);
+            });
+            
+            container.appendChild(boardDiv);
+            
+            // 添加识别统计摘要
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = 'recognition-summary';
+            
+            const avgConfidence = recognizedLetters > 0 ? Math.round(totalConfidence / recognizedLetters) : 0;
+            const recognitionRate = totalCells > 0 ? Math.round((recognizedLetters / totalCells) * 100) : 0;
+            
+            // 找出识别到的单词
+            const recognizedWords = [];
+            gameRows.forEach(row => {
+                const word = row.map(cell => cell.letter || '_').join('');
+                if (word.indexOf('_') === -1 && word.length > 0) {
+                    recognizedWords.push(word);
+                }
+            });
+            
+            summaryDiv.innerHTML = `
+                <h3>📊 识别统计</h3>
+                <div class="summary-stats">
+                    <div class="stat-card">
+                        <div class="stat-value">${recognizedLetters}/${totalCells}</div>
+                        <div class="stat-label">识别字母数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${avgConfidence}%</div>
+                        <div class="stat-label">平均置信度</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${recognitionRate}%</div>
+                        <div class="stat-label">识别率</div>
+                    </div>
+                </div>
+                ${recognizedWords.length > 0 ? `
+                <div style="margin-top: 15px;">
+                    <strong>识别到的完整单词：</strong>
+                    <div style="margin-top: 5px;">
+                        ${recognizedWords.map(word => `
+                            <span style="display: inline-block; padding: 5px 10px; margin: 3px; background: #4CAF50; color: white; border-radius: 4px; font-weight: bold;">
+                                ${word}
+                            </span>
+                        `).join('')}
+                    </div>
+                </div>
+                ` : ''}
+                ${Object.keys(letterCounts).length > 0 ? `
+                <div style="margin-top: 15px;">
+                    <strong>字母分布：</strong>
+                    <div style="margin-top: 5px; font-family: monospace;">
+                        ${Object.entries(letterCounts)
+                            .sort(([a], [b]) => a.localeCompare(b))
+                            .map(([letter, count]) => `${letter}:${count}`)
+                            .join(' | ')}
+                    </div>
+                </div>
+                ` : ''}
+            `;
+            
+            container.appendChild(summaryDiv);
+        }
+    </script>
+</body>
+</html>

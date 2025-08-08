@@ -5,12 +5,14 @@ interface RecommendationDisplayProps {
   recommendations: EntropyResult[];
   loading?: boolean;
   error?: string;
+  isFirstGuess?: boolean;
 }
 
 export const RecommendationDisplay: React.FC<RecommendationDisplayProps> = ({
   recommendations,
   loading = false,
-  error
+  error,
+  isFirstGuess = false
 }) => {
   if (loading) {
     return (
@@ -35,14 +37,16 @@ export const RecommendationDisplay: React.FC<RecommendationDisplayProps> = ({
   if (recommendations.length === 0) {
     return (
       <div className="p-6 bg-gray-50 rounded-lg text-center text-gray-500">
-        <p>请输入猜测结果后点击"推荐单词"按钮</p>
+        <p>选择单词长度后将显示推荐的开局词</p>
       </div>
     );
   }
 
   return (
     <div className="p-4 bg-green-50 rounded-lg">
-      <h3 className="text-lg font-semibold text-gray-800 mb-3">推荐单词</h3>
+      <h3 className="text-lg font-semibold text-gray-800 mb-3">
+        {isFirstGuess ? '推荐开局词' : '推荐单词'}
+      </h3>
       <div className="space-y-2">
         {recommendations.map((rec, index) => (
           <div 

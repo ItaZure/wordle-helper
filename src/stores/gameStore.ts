@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { GuessResult, LetterStatus } from '@/types';
+import { GameState as ImportedGameState } from '@/types/game';
 import { 
   WordConstraints, 
   buildConstraintsFromGuesses,
@@ -28,12 +29,13 @@ interface GameState {
   error: string | null;
   
   // Actions
-  setWordLength: (length: number) => void;
+  setWordLength: (length: number) => Promise<void>;
   addGuess: (word: string, statuses: LetterStatus[]) => void;
   updateGuess: (index: number, word: string, statuses: LetterStatus[]) => void;
   removeGuess: (index: number) => void;
-  clearGuesses: () => void;
+  clearGuesses: () => Promise<void>;
   calculateRecommendations: () => Promise<void>;
+  setGameState: (gameState: ImportedGameState) => void;
 }
 
 export const useGameStore = create<GameState>()(
@@ -42,7 +44,7 @@ export const useGameStore = create<GameState>()(
       // 初始状态
       wordLength: 5,
       maxGuesses: 6,
-      guesses: [],
+      guesses: [{ word: '', letterStatuses: Array(5).fill('absent') }], // 默认一行
       currentConstraints: new WordConstraints(),
       possibleWords: [],
       recommendations: [],
@@ -50,15 +52,30 @@ export const useGameStore = create<GameState>()(
       error: null,
       
       // 设置单词长度
-      setWordLength: (length) => {
+      setWordLength: async (length) => {
         set({
           wordLength: length,
-          guesses: [],
+          guesses: [{ word: '', letterStatuses: Array(length).fill('absent') }], // 默认一行
           currentConstraints: new WordConstraints(),
           possibleWords: [],
           recommendations: [],
           error: null
         });
+        
+        // 自动获取开局词推荐
+        try {
+          const allWords = await getWordsByLength(length);
+          const recommendations = getWordRecommendations(
+            allWords,
+            allWords, // 初始时所有词都是可能答案
+            new WordConstraints(),
+            true // isFirstGuess
+          );
+          
+          set({ recommendations });
+        } catch (error) {
+          console.error('获取开局词推荐失败:', error);
+        }
       },
       
       // 添加猜测
@@ -96,22 +113,98 @@ export const useGameStore = create<GameState>()(
       },
       
       // 清空所有猜测
-      clearGuesses: () => {
+      clearGuesses: async () => {
+        const state = get();
+        
+        // 重置为初始状态，保留一个空行
         set({
-          guesses: [],
+          guesses: [{ word: '', letterStatuses: Array(state.wordLength).fill('absent') }], // 保留一个空行
           currentConstraints: new WordConstraints(),
           possibleWords: [],
           recommendations: [],
           error: null
         });
+        
+        // 重新获取开局词推荐
+        try {
+          const allWords = await getWordsByLength(state.wordLength);
+          const recommendations = getWordRecommendations(
+            allWords,
+            allWords, // 初始时所有词都是可能答案
+            new WordConstraints(),
+            true // isFirstGuess
+          );
+          
+          set({ recommendations });
+        } catch (error) {
+          console.error('获取开局词推荐失败:', error);
+        }
+      },
+      
+      // 设置游戏状态（从OCR识别结果）
+      setGameState: (gameState: ImportedGameState) => {
+        console.log('setGameState被调用，收到数据:', gameState);
+        const guesses: GuessResult[] = [];
+        
+        // 检测单词长度
+        let detectedWordLength = 5; // 默认5
+        for (const row of gameState.rows) {
+          if (row.length > 0) {
+            detectedWordLength = row.length;
+            break;
+          }
+        }
+        console.log('检测到单词长度:', detectedWordLength);
+        
+        // 将OCR识别的游戏状态转换为内部格式
+        for (const row of gameState.rows) {
+          const word = row.map(cell => cell.letter).join('');
+          
+          const letterStatuses: LetterStatus[] = row.map(cell => {
+            switch (cell.state) {
+              case 'correct': return 'correct';
+              case 'present': return 'present';
+              case 'absent': return 'absent';
+              default: return 'absent';
+            }
+          });
+          
+          // 只添加非空行或有状态的行
+          const hasContent = word.trim() !== '' || letterStatuses.some(s => s === 'correct' || s === 'present');
+          if (hasContent) {
+            guesses.push({ word, letterStatuses });
+          }
+        }
+        
+        // 如果没有识别到任何猜测，添加一个空行
+        if (guesses.length === 0) {
+          guesses.push({ 
+            word: '', 
+            letterStatuses: Array(detectedWordLength).fill('absent') 
+          });
+        }
+        
+        console.log('准备更新状态，猜测列表:', JSON.stringify(guesses, null, 2));
+        
+        set({
+          wordLength: detectedWordLength,
+          guesses,
+          recommendations: [],
+          error: null
+        });
+        
+        console.log('状态更新完成');
       },
       
       // 计算推荐
       calculateRecommendations: async () => {
         const state = get();
         
-        // 验证是否有猜测
-        if (state.guesses.length === 0) {
+        // 过滤掉空的猜测
+        const validGuesses = state.guesses.filter(g => g.word.trim() !== '');
+        
+        // 验证是否有有效猜测
+        if (validGuesses.length === 0) {
           set({ error: '请先输入至少一个猜测' });
           return;
         }
@@ -123,7 +216,7 @@ export const useGameStore = create<GameState>()(
           const allWords = await getWordsByLength(state.wordLength);
           
           // 根据猜测构建约束
-          const constraints = buildConstraintsFromGuesses(state.guesses);
+          const constraints = buildConstraintsFromGuesses(validGuesses);
           
           // 过滤可能的单词
           const possibleWords = filterWords(allWords, constraints);
